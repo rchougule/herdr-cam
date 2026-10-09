@@ -75,6 +75,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         resetIdle()
         camera.onLost = { [weak self] in self?.cameraLost() }
 
+        if let path = opts.focusCheck {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                let state = "active=\(NSApp.isActive) key=\(self.window.isKeyWindow)\n"
+                try? writeAtomically(Data(state.utf8), to: path)
+                self.finish(.cancel)
+            }
+            return
+        }
+
         Camera.authorize { granted in
             guard granted else {
                 if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera") {
@@ -89,11 +98,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
 
-    /// Activation is cooperative on macOS 14+, so ask again once we are active;
-    /// without key focus, Space would go to the terminal behind us.
+    /// The window must take the keyboard, or Space goes to the terminal behind it.
+    /// macOS 14+ will not let an app launched from a background process (herdr's
+    /// server) activate itself with NSApp.activate(); a non-activating panel can still
+    /// become key, the way Spotlight-style windows do, and the terminal stays the
+    /// active app. If the panel is ever refused, fall back to the older call.
     func bringForward() {
-        if #available(macOS 14.0, *) { NSApp.activate() } else { NSApp.activate(ignoringOtherApps: true) }
         window.makeKeyAndOrderFront(nil)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            guard !self.finished, !self.window.isKeyWindow else { return }
+            NSApp.activate(ignoringOtherApps: true)
+            self.window.makeKeyAndOrderFront(nil)
+        }
     }
 
     func applicationDidBecomeActive(_ note: Notification) { window?.makeKeyAndOrderFront(nil) }
@@ -137,10 +153,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func buildWindow() {
         let frame = NSRect(x: 0, y: 0, width: 960, height: 540)
         window = CamWindow(
-            contentRect: frame, styleMask: [.titled, .closable, .resizable],
+            contentRect: frame, styleMask: [.titled, .closable, .resizable, .nonactivatingPanel],
             backing: .buffered, defer: false)
         window.title = "herdr-cam"
         window.level = .floating
+        window.isFloatingPanel = true
+        window.becomesKeyOnlyIfNeeded = false
+        window.hidesOnDeactivate = false  // stay up if you click the terminal to read
         window.delegate = self
         window.isReleasedWhenClosed = false
         window.onKey = { [weak self] cmd in self?.handle(cmd) }
@@ -498,7 +517,7 @@ final class Camera: NSObject, AVCapturePhotoCaptureDelegate, @unchecked Sendable
 
 // MARK: - Views
 
-final class CamWindow: NSWindow {
+final class CamWindow: NSPanel {
     var onKey: ((CamCommand) -> Void)?
 
     override var canBecomeKey: Bool { true }

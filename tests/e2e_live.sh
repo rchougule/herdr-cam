@@ -47,13 +47,30 @@ wait_for "❯" 40 || {
   echo "FAIL: claude prompt never appeared"
   exit 1
 }
-sleep 2
+# A paste that lands while a fresh Claude Code session is still starting up can stay
+# plain text, so wait for herdr to report the agent idle and give it a moment more.
+i=0
+until "$herdr" pane get "$pane" | grep -q '"agent_status":"idle"' || [ $i -ge 30 ]; do
+  sleep 1
+  i=$((i + 1))
+done
+sleep 3
 
 export HERDR_PANE_ID="$pane"
 export HERDR_PLUGIN_STATE_DIR="$tmp/state"
 export HERDR_CAM_APP="$root/build/test/HerdrCam.app"
 export HERDR_CAM_NO_DETACH=1
 export HERDR_CAM_NO_REFOCUS=1
+
+# The window must take keyboard focus when opened from herdr's process tree, or Space
+# goes to the terminal behind it (the v0.1.0 bug). No camera needed for this check.
+HERDR_CAM_FOCUS_CHECK="$tmp/focus" "$root/bin/herdr-cam" capture
+if grep -q "active=true key=true" "$tmp/focus" 2>/dev/null; then
+  echo "e2e: PASS (camera window takes keyboard focus)"
+else
+  echo "e2e: FAIL; camera window did not take keyboard focus: $(cat "$tmp/focus" 2>/dev/null)"
+  exit 1
+fi
 wait_secs=20
 if [ "$mode" = camera ]; then
   export HERDR_CAM_AUTO_CAPTURE=5 HERDR_CAM_AUTO_SHOTS=2

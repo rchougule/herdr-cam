@@ -51,6 +51,11 @@ shellcheck -s sh bin/herdr-cam scripts/*.sh tests/*.sh tests/support/fake-open t
 - **`config.env` is data.** It is parsed key by key and validated; never `source` it.
 - **Privacy.** `umask 077` in the launcher, 0700/0600 from Swift. Metadata stripping is
   tested; keep `processImage` re-encoding from pixels, not copying properties.
+- **Keyboard focus.** The window is a non-activating `NSPanel`. Do not switch back to an
+  `NSWindow` with `NSApp.activate()`: on macOS 14+ an app launched from herdr's
+  background process cannot activate itself that way, the window opens without focus,
+  and Space goes to the terminal (the v0.1.0 bug). `e2e_live.sh` checks this with
+  `--focus-check`.
 - **Hardened runtime** needs `app/HerdrCam.entitlements` (camera). Keep both in `build.sh`.
 - **Never point the live e2e at the user's own pane or config.** It uses a scratch pane,
   pastes by pane id, and keeps state in a temp dir.
@@ -62,6 +67,8 @@ shellcheck -s sh bin/herdr-cam scripts/*.sh tests/*.sh tests/support/fake-open t
 - In POSIX sh, `VAR=x some_function` leaks `VAR` into the rest of the script. The launcher
   tests call captures through `env` for this reason.
 - `plutil -extract … raw` prints its errors on stdout; check its exit status.
+- A paste into a Claude Code session that started seconds ago can stay plain text; the
+  e2e waits for herdr to report the agent idle first.
 - A same-page `#hash` navigation does not re-run a page's script; `render.mjs` goes via
   `about:blank`.
 

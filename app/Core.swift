@@ -24,6 +24,9 @@ struct Options: Equatable {
     var fakeImages: [String] = []
     var autoCapture: Int?
     var autoShots: Int = 1
+    /// Open the window without the camera, record whether it got keyboard focus to
+    /// this path ("active=… key=…"), then close. Guards the focus regression in v0.1.0.
+    var focusCheck: String?
 }
 
 enum OptionsError: Error, Equatable, CustomStringConvertible {
@@ -80,6 +83,8 @@ func parseOptions(_ args: [String]) throws -> Options {
             opts.autoCapture = try int(arg, 1...30)
         case "--auto-shots":
             opts.autoShots = try int(arg, 1...20)
+        case "--focus-check":
+            opts.focusCheck = try value(arg)
         #endif
         default:
             // LaunchServices may append its own single-dash args (-psn_..., -NS...).

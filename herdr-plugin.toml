@@ -1,6 +1,6 @@
 id = "rchougule.cam"
 name = "herdr-cam"
-version = "0.1.0"
+version = "0.1.1"
 min_herdr_version = "0.9.1"
 description = "Show your agent what's on your desk: press a key, point the webcam, and the photo lands in the focused agent's prompt."
 platforms = ["macos"]

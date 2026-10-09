@@ -20,7 +20,7 @@ expect() {
 }
 
 # Hooks from the outer environment must not leak in.
-unset HERDR_CAM_FAKE_IMAGES HERDR_CAM_AUTO_CAPTURE HERDR_CAM_AUTO_SHOTS HERDR_CAM_APP HERDR_PANE_ID
+unset HERDR_CAM_FAKE_IMAGES HERDR_CAM_AUTO_CAPTURE HERDR_CAM_AUTO_SHOTS HERDR_CAM_FOCUS_CHECK HERDR_CAM_APP HERDR_PANE_ID
 
 # Plugin-like environment, all of it inside $work.
 export HERDR_SOCKET_PATH="$work/herdr.sock"
@@ -186,6 +186,9 @@ reset
 capture HERDR_CAM_FAKE_IMAGES="/x/a.png:/x/b.png" HERDR_CAM_AUTO_CAPTURE=4 HERDR_CAM_AUTO_SHOTS=2 FAKE_OPEN_MODE=ok
 expect "fake images forwarded in order" 'grep -q -- "--fake-image /x/a.png --fake-image /x/b.png" "$work/open.log"'
 expect "auto capture forwarded" 'grep -q -- "--auto-capture 4 --auto-shots 2" "$work/open.log"'
+reset
+capture HERDR_CAM_FOCUS_CHECK=/x/focus FAKE_OPEN_MODE=cancel
+expect "focus check forwarded" 'grep -q -- "--focus-check /x/focus" "$work/open.log"'
 
 # --- detached worker ----------------------------------------------------------------------
 reset

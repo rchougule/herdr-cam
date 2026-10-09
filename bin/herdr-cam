@@ -156,6 +156,7 @@ launch_app() {
   done
   [ -n "${HERDR_CAM_AUTO_CAPTURE:-}" ] && set -- "$@" --auto-capture "$HERDR_CAM_AUTO_CAPTURE"
   [ -n "${HERDR_CAM_AUTO_SHOTS:-}" ] && set -- "$@" --auto-shots "$HERDR_CAM_AUTO_SHOTS"
+  [ -n "${HERDR_CAM_FOCUS_CHECK:-}" ] && set -- "$@" --focus-check "$HERDR_CAM_FOCUS_CHECK"
   "$opener" "$@"
 }
 

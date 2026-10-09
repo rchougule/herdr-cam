@@ -79,12 +79,13 @@ do {
                                    "--auto-capture", "4", "--auto-shots", "2"])
     check(hooks.fakeImages == ["/a.png", "/b.png"], "fake images repeat")
     check(hooks.autoCapture == 4 && hooks.autoShots == 2, "auto capture parsed")
+    check(try! parseOptions(["--out", "/x", "--focus-check", "/f"]).focusCheck == "/f", "focus check parsed")
     expectThrows(OptionsError.badValue("--auto-capture", "0"), "auto capture range") {
         _ = try parseOptions(["--out", "/x", "--auto-capture", "0"])
     }
     #else
     // Release builds must not be drivable without a key press.
-    for hook in ["--fake-image", "--auto-capture", "--auto-shots"] {
+    for hook in ["--fake-image", "--auto-capture", "--auto-shots", "--focus-check"] {
         expectThrows(OptionsError.unknown(hook), "release build rejects \(hook)") {
             _ = try parseOptions(["--out", "/x", hook, "1"])
         }

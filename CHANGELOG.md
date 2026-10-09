@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.1.1] - 2026-10-09
+
+### Fixed
+
+- The camera window takes keyboard focus when it opens, so `Space` and `Enter` work
+  without clicking it first. On macOS 14+ an app launched from herdr's background
+  process could not activate itself; the window is now a non-activating panel, which
+  becomes key while your terminal stays the active app.
+
 ## [0.1.0] - 2026-10-09
 
 First public release.
@@ -28,4 +37,5 @@ First public release.
 - The app is signed with the hardened runtime; the test suite's automatic-capture hooks
   exist only in test builds.
 
+[0.1.1]: https://github.com/rchougule/herdr-cam/releases/tag/v0.1.1
 [0.1.0]: https://github.com/rchougule/herdr-cam/releases/tag/v0.1.0

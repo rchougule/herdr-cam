@@ -12,7 +12,7 @@ needs Node and Google Chrome.
 | `herdr-plugin.toml` | Manifest: the build step and the `capture` / `doctor` actions |
 | `bin/herdr-cam` | Launcher: finds the focused pane, opens the app, reads its result, pastes over the herdr socket |
 | `app/Core.swift` | Pure logic: options, key map, tray, result file, image pipeline. No AppKit, so tests compile it headless |
-| `app/CamApp.swift` | The camera window: AVFoundation session, preview, tray thumbnails, countdown, idle close |
+| `app/CamApp.swift` | The camera window (a non-activating panel, so it takes the keyboard): AVFoundation session, preview, tray thumbnails, countdown, idle close |
 | `app/Info.plist`, `app/HerdrCam.entitlements` | Bundle metadata and the camera entitlement the hardened runtime needs |
 | `scripts/build.sh` | Builds `build/HerdrCam.app` (the plugin's install-time build step) |
 | `scripts/test.sh` | Every test that needs no herdr server or camera |
@@ -61,7 +61,9 @@ rebuild when nothing changed, and the test suite builds into `build/test/` and
 
 `scripts/build.sh DIR --testing` compiles in options that let the suite run without a
 person: `--fake-image PATH` (repeatable; skips the camera) and `--auto-capture N` with
-`--auto-shots K` (counts down, takes K photos, sends). Release builds reject them. The
+`--auto-shots K` (counts down, takes K photos, sends), and `--focus-check PATH` (opens the
+window without the camera and records whether it got keyboard focus). Release builds
+reject them. The
 launcher forwards them only from the environment, never from `config.env`:
 
 | Variable | Effect |
@@ -69,6 +71,7 @@ launcher forwards them only from the environment, never from `config.env`:
 | `HERDR_CAM_APP` | App bundle to launch (the e2e test points it at the test build) |
 | `HERDR_CAM_FAKE_IMAGES` | Colon-separated fixture paths, passed as `--fake-image` |
 | `HERDR_CAM_AUTO_CAPTURE`, `HERDR_CAM_AUTO_SHOTS` | Passed as `--auto-capture`, `--auto-shots` |
+| `HERDR_CAM_FOCUS_CHECK` | Passed as `--focus-check` |
 | `HERDR_CAM_OPEN` | Replaces `/usr/bin/open` (the launcher tests use a fake) |
 | `HERDR_CAM_NO_DETACH`, `HERDR_CAM_NO_REFOCUS` | Run the worker inline; skip handing focus back |
 
@@ -85,7 +88,7 @@ sh tests/e2e_live.sh camera         # live: real camera window takes two photos 
 | `tests/core/main.swift` | Options and their ranges, key map, tray, result file, scaling, orientation, quality, metadata stripping, file permissions. Built twice: with and without the test hooks | CI and local |
 | `tests/cli_test.sh` | Launcher against a fake herdr socket, CLI, and `open`: paste shape and escaping, multi-photo paste, pane lookup on a real reply, cancel / error / crash / open failure / paste failure, the lock, config parsing and validation, hooks ignored in config, detached worker, pruning, doctor | CI and local |
 | `scripts/test.sh` app steps | Headless run of the real test bundle; the release bundle refuses the hooks, has the hardened runtime and camera usage string | CI and local |
-| `tests/e2e_live.sh` | Real herdr socket and a scratch Claude Code pane; waits for `[Image #1] [Image #2]`; runs `doctor` through herdr's plugin runner | local only |
+| `tests/e2e_live.sh` | Through the real launcher and `open`: the window takes keyboard focus; real herdr socket and a scratch Claude Code pane, waits for `[Image #1] [Image #2]`; runs `doctor` through herdr's plugin runner | local only |
 
 XCTest is not part of the Command Line Tools, so the Swift tests are a small assertion
 runner compiled with `swiftc`. The e2e test never touches your `config.env` or captures:
