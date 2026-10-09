@@ -4,9 +4,9 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.1.0] - 2026-10-09
 
-First public release, planned as 0.1.0.
+First public release.
 
 ### Added
 
@@ -27,3 +27,5 @@ First public release, planned as 0.1.0.
   reported as a herdr notification.
 - The app is signed with the hardened runtime; the test suite's automatic-capture hooks
   exist only in test builds.
+
+[0.1.0]: https://github.com/rchougule/herdr-cam/releases/tag/v0.1.0
