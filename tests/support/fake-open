@@ -1,0 +1,14 @@
+#!/bin/sh
+# Stand-in for `open -W HerdrCam.app --args ...`. Records argv to $FAKE_OPEN_LOG and
+# behaves per $FAKE_OPEN_MODE: ok (writes the fixture to --out), cancel, error.
+echo "$*" >>"$FAKE_OPEN_LOG"
+out=""
+while [ $# -gt 0 ]; do
+  [ "$1" = "--out" ] && out="$2"
+  shift
+done
+case "${FAKE_OPEN_MODE:-ok}" in
+ok) mkdir -p "$(dirname "$out")" && cp "$FAKE_FIXTURE" "$out" ;;
+cancel) ;;
+error) echo "Camera access denied." >"$out.err" ;;
+esac

@@ -1,0 +1,23 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: build & test (macOS)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Shellcheck
+        run: brew install shellcheck >/dev/null && shellcheck -s sh bin/herdr-cam scripts/*.sh tests/*.sh
+
+      # Core tests, launcher tests against a fake herdr socket, app build, and a
+      # headless run of the real bundle. No herdr server or camera exists in CI;
+      # tests/e2e_live.sh is the live suite and is run locally.
+      - name: Test
+        run: sh scripts/test.sh

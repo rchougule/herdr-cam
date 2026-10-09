@@ -1,0 +1,134 @@
+/* Shared look for the banner, social preview and demo. Catppuccin Mocha, to match
+   the other herdr plugin banners. Rendered by scripts/render-media.sh. */
+:root {
+  --base: #1e1e2e;
+  --mantle: #181825;
+  --crust: #11111b;
+  --surface0: #313244;
+  --surface1: #45475a;
+  --overlay0: #6c7086;
+  --subtext0: #a6adc8;
+  --text: #cdd6f4;
+  --mauve: #cba6f7;
+  --blue: #89b4fa;
+  --green: #a6e3a1;
+  --yellow: #f9e2af;
+  --peach: #fab387;
+  --red: #f38ba8;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+  --sans: -apple-system, "SF Pro Display", "Helvetica Neue", sans-serif;
+  --hand: "Noteworthy", "Bradley Hand", "Marker Felt", cursive;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: var(--crust); }
+body { font-family: var(--mono); color: var(--text); -webkit-font-smoothing: antialiased; }
+
+/* ---- macOS-style window chrome ---- */
+.win {
+  position: absolute;
+  background: var(--base);
+  border: 1px solid var(--surface0);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+}
+.win > .bar {
+  height: 28px;
+  background: var(--mantle);
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  gap: 7px;
+  border-bottom: 1px solid var(--surface0);
+}
+.dot { width: 11px; height: 11px; border-radius: 50%; }
+.dot.r { background: #ff5f57; } .dot.y { background: #febc2e; } .dot.g { background: #28c840; }
+.win > .bar .title {
+  flex: 1;
+  text-align: center;
+  margin-right: 50px;
+  font: 12px var(--sans);
+  color: var(--overlay0);
+}
+
+/* ---- herdr terminal ---- */
+.term { display: flex; height: calc(100% - 28px); }
+.side {
+  width: 150px;
+  background: var(--mantle);
+  border-right: 1px solid var(--surface0);
+  padding: 12px 10px;
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--subtext0);
+}
+.side .ws { color: var(--text); font-weight: 700; }
+.side .agent { color: var(--mauve); }
+.side .muted { color: var(--overlay0); }
+.pane { flex: 1; padding: 14px 16px; font-size: 13px; line-height: 1.55; position: relative; }
+.pane .dim { color: var(--overlay0); }
+.pane .bullet { color: var(--text); }
+.pane .bullet::before { content: "● "; color: var(--subtext0); }
+.pane .user { color: var(--subtext0); }
+.prompt {
+  position: absolute;
+  left: 16px; right: 16px; bottom: 34px;
+  border-top: 1px solid var(--surface1);
+  border-bottom: 1px solid var(--surface1);
+  padding: 6px 0;
+}
+.prompt .caret { color: var(--text); }
+.cursor {
+  display: inline-block; width: 8px; height: 15px; margin-left: 1px;
+  background: var(--text); vertical-align: -2px;
+}
+.chip-img { color: var(--blue); }
+.status { position: absolute; left: 16px; bottom: 10px; font-size: 11px; color: var(--overlay0); }
+
+/* ---- camera window ---- */
+.cam .view {
+  position: relative;
+  overflow: hidden;
+  background: radial-gradient(120% 90% at 30% 20%, #4a4038 0%, #2b2622 55%, #1a1715 100%);
+}
+.cam .hud {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  height: 26px; line-height: 26px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff; text-align: center;
+  font: 500 11px var(--mono);
+  white-space: nowrap;
+}
+.cam .flash { position: absolute; inset: 0; background: #fff; opacity: 0; }
+
+/* ---- the notebook page ---- */
+.page {
+  position: absolute;
+  background:
+    repeating-linear-gradient(to bottom, transparent 0 25px, #c9d6ea 25px 26px),
+    #fbfaf5;
+  border-radius: 4px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  font-family: var(--hand);
+  color: #24324d;
+  padding: 14px 20px;
+}
+.page .h { font-size: 19px; margin-bottom: 6px; }
+.page table { border-collapse: collapse; font-size: 16px; width: 100%; }
+.page th { font-weight: 400; text-align: left; color: #3d4f73; padding: 0 8px 4px 0; border-bottom: 1.5px solid #24324d; }
+.page td { padding: 1px 8px 0 0; height: 26px; }
+.page .ok { color: #1f7a3a; }
+.page .hit { color: #b3261e; }
+
+/* ---- keycaps ---- */
+.keys { position: absolute; display: flex; gap: 8px; align-items: center; }
+.key {
+  font: 600 14px var(--sans);
+  color: var(--text);
+  background: var(--surface0);
+  border: 1px solid var(--surface1);
+  border-bottom-width: 3px;
+  border-radius: 7px;
+  padding: 5px 11px;
+}
+.keys .then { color: var(--overlay0); font: 13px var(--sans); }

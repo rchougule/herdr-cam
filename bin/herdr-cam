@@ -1,0 +1,170 @@
+#!/bin/sh
+# herdr-cam: photograph your notes and paste them into the focused herdr pane.
+#
+#   herdr-cam capture          plugin action: open the camera, paste the photo
+#   herdr-cam paste PANE FILE  bracketed-paste FILE's path into PANE (no Enter)
+#   herdr-cam prune            delete captures older than KEEP_DAYS
+#   herdr-cam doctor           check the build, socket, and keybinding
+#
+# Agents such as Claude Code turn a pasted image path into an attachment
+# ("[Image #1]"), so the photo lands in the prompt without touching the clipboard.
+set -u
+
+root="$(cd "$(dirname "$0")/.." && pwd)"
+app="${HERDR_CAM_APP:-$root/build/HerdrCam.app}"
+herdr="${HERDR_BIN_PATH:-herdr}"
+state="${HERDR_PLUGIN_STATE_DIR:-$HOME/.local/state/herdr-cam}"
+captures="$state/captures"
+log="$state/herdr-cam.log"
+
+# User config: KEY=VALUE lines in $(herdr plugin config-dir rchougule.cam)/config.env
+MAX_EDGE=2048
+QUALITY=0.85
+TIMER=3
+KEEP_DAYS=30
+conf="${HERDR_PLUGIN_CONFIG_DIR:-}/config.env"
+if [ -n "${HERDR_PLUGIN_CONFIG_DIR:-}" ] && [ -f "$conf" ]; then
+  # shellcheck disable=SC1090
+  . "$conf"
+fi
+
+notify() {
+  "$herdr" notification show herdr-cam --body "$1" >/dev/null 2>&1 || true
+}
+
+json_escape() {
+  printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
+}
+
+focused_pane() {
+  if [ -n "${HERDR_PANE_ID:-}" ]; then
+    echo "$HERDR_PANE_ID"
+    return
+  fi
+  "$herdr" pane current 2>/dev/null | sed -n 's/.*"pane_id":"\([^"]*\)".*/\1/p'
+}
+
+# pane.send_input wraps text in bracketed-paste markers when the pane's app asked
+# for them, which is what makes the agent treat it as a paste and not typing.
+paste() {
+  pane="$1"
+  file="$2"
+  req="$(printf '{"id":"herdr-cam","method":"pane.send_input","params":{"pane_id":"%s","text":"%s"}}' \
+    "$(json_escape "$pane")" "$(json_escape "$file")")"
+  resp="$(printf '%s\n' "$req" | nc -U -w 3 "${HERDR_SOCKET_PATH:?HERDR_SOCKET_PATH not set}" 2>&1)"
+  if printf '%s' "$resp" | grep -Eq '"type" *: *"ok"'; then
+    return 0
+  fi
+  echo "paste failed: $resp" >&2
+  return 1
+}
+
+prune() {
+  [ "$KEEP_DAYS" -gt 0 ] 2>/dev/null || return 0
+  [ -d "$captures" ] || return 0
+  find "$captures" -name 'note-*' -type f -mtime +"$KEEP_DAYS" -delete 2>/dev/null || true
+}
+
+launch_app() {
+  out="$1"
+  set -- "$app" --args --out "$out" --max-edge "$MAX_EDGE" --quality "$QUALITY" --timer "$TIMER"
+  if [ -n "${HERDR_CAM_AUTO_CAPTURE:-}" ]; then
+    set -- "$@" --auto-capture "$HERDR_CAM_AUTO_CAPTURE"
+  fi
+  if [ -n "${HERDR_CAM_FAKE_IMAGE:-}" ]; then
+    set -- "$@" --fake-image "$HERDR_CAM_FAKE_IMAGE"
+  fi
+  if [ -n "${HERDR_CAM_OPEN:-}" ]; then
+    "$HERDR_CAM_OPEN" "$@"
+  else
+    open -W "$@"
+  fi
+}
+
+# Foreground worker: camera window, then paste, then hand focus back.
+run() {
+  pane="$1"
+  mkdir -p "$captures"
+  out="$captures/note-$(date +%Y%m%d-%H%M%S)-$$.jpg"
+
+  front=""
+  if [ -z "${HERDR_CAM_NO_REFOCUS:-}" ]; then
+    front="$(lsappinfo info -only bundleid "$(lsappinfo front)" 2>/dev/null | sed -n 's/.*="\(.*\)"/\1/p')"
+  fi
+
+  launch_app "$out"
+
+  if [ -s "$out.err" ]; then
+    notify "$(cat "$out.err")"
+    rm -f "$out.err"
+    return 1
+  fi
+  [ -s "$out" ] || return 0 # cancelled
+
+  echo "$(date '+%F %T') captured $out -> pane $pane"
+  if ! paste "$pane" "$out"; then
+    notify "Saved $out but could not paste into pane $pane."
+    return 1
+  fi
+  if [ -n "$front" ]; then
+    open -b "$front" 2>/dev/null || true
+  fi
+  prune
+}
+
+capture() {
+  [ -d "$app" ] || [ -n "${HERDR_CAM_OPEN:-}" ] || {
+    notify "HerdrCam.app is not built. Run scripts/build.sh in $root."
+    return 1
+  }
+  pane="$(focused_pane)"
+  if [ -z "$pane" ]; then
+    notify "No focused pane to paste into."
+    return 1
+  fi
+  # One camera window at a time: a second press just brings it forward.
+  if [ -z "${HERDR_CAM_OPEN:-}" ] && pgrep -f "$app/Contents/MacOS/HerdrCam" >/dev/null 2>&1; then
+    open "$app"
+    return 0
+  fi
+  if [ -n "${HERDR_CAM_NO_DETACH:-}" ]; then
+    run "$pane"
+    return
+  fi
+  # Detach so the keybinding returns at once, however long the shot takes.
+  mkdir -p "$state"
+  (nohup "$0" __run "$pane" >>"$log" 2>&1 &)
+}
+
+doctor() {
+  status=0
+  if [ -x "$app/Contents/MacOS/HerdrCam" ]; then echo "ok    app built: $app"; else
+    echo "FAIL  app missing: run $root/scripts/build.sh"
+    status=1
+  fi
+  if [ -S "${HERDR_SOCKET_PATH:-}" ]; then echo "ok    herdr socket: $HERDR_SOCKET_PATH"; else
+    echo "FAIL  herdr socket not found (run inside herdr or via the plugin)"
+    status=1
+  fi
+  cfg="${HERDR_CONFIG_PATH:-$HOME/.config/herdr/config.toml}"
+  if grep -q 'rchougule.cam.capture' "$cfg" 2>/dev/null; then echo "ok    keybinding present in $cfg"; else
+    echo "WARN  no keybinding for rchougule.cam.capture in $cfg (see README)"
+  fi
+  echo "info  captures: $captures (kept $KEEP_DAYS days; 0 keeps forever)"
+  echo "info  settings: MAX_EDGE=$MAX_EDGE QUALITY=$QUALITY TIMER=$TIMER"
+  return $status
+}
+
+cmd="${1:-}"
+[ $# -gt 0 ] && shift
+case "$cmd" in
+capture) capture ;;
+__run) run "$1" ;;
+paste) paste "$1" "$2" ;;
+prune) prune ;;
+doctor) doctor ;;
+*)
+  echo "usage: herdr-cam capture | paste PANE FILE | prune | doctor" >&2
+  exit 2
+  ;;
+esac

@@ -1,0 +1,101 @@
+<!doctype html>
+<!-- Demo animation. Renders the frame at the time given in the URL hash (#t=3.2), so
+     scripts/render-media.sh can screenshot it frame by frame into assets/demo.gif.
+     Open it in a browser without a hash to watch it play. -->
+<html>
+<head>
+<meta charset="utf-8">
+<title>herdr-cam demo</title>
+<link rel="stylesheet" href="scene.css">
+<style>
+  #stage { position: relative; width: 960px; height: 600px; background: var(--crust); }
+  .chip-img { background: rgba(137, 180, 250, 0.14); border-radius: 3px; padding: 0 2px; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<script src="scene.js"></script>
+<script>
+const DURATION = 12;
+const stage = document.getElementById("stage");
+const term = terminal({ x: 20, y: 20, w: 920, h: 560 });
+const cam = camera({ x: 360, y: 64, w: 540 });
+const k1 = keys(["ctrl", "b", "then", "i"], { x: 380, y: 452 });
+const k2 = keys(["Space"], { x: 448, y: 452 });
+const k3 = keys(["⏎ Enter"], { x: 430, y: 452 });
+stage.append(term, cam, k1, k2, k3);
+
+const transcript = term.querySelector(".transcript");
+const input = term.querySelector(".input");
+const cursor = term.querySelector(".cursor");
+const page = cam.querySelector(".page");
+const flash = cam.querySelector(".flash");
+
+const INTRO = `
+  <div class="bullet">Prefix sums: keep a running total. A subarray ending at i sums
+  to k when (total − k) was seen earlier.</div>
+  <div class="dim">&nbsp;&nbsp;Try a dry run on [2, 3, 1, 4] with k = 4, by hand.</div>`;
+const TYPED = "is my dry run right? ";
+const ASK = `<div class="user" style="margin-top:14px">&gt; ${TYPED}<span class="chip-img">[Image #1]</span></div>`;
+const REPLY = [
+  `<div class="bullet" style="margin-top:10px">Yes. Rows 2 and 3 are the hits:</div>`,
+  `<div>&nbsp;&nbsp;· i=2 &nbsp;total 6, &nbsp;need 2 → seen at i=0 → <span style="color:var(--green)">[3, 1]</span></div>`,
+  `<div>&nbsp;&nbsp;· i=3 &nbsp;total 10, need 6 → seen at i=2 → <span style="color:var(--green)">[4]</span></div>`,
+  `<div style="margin-top:6px">&nbsp;&nbsp;Two subarrays sum to 4. Your table is correct.</div>`,
+];
+
+function show(node, on, fade = 1) {
+  node.style.opacity = on ? fade : 0;
+}
+
+function apply(t) {
+  // 0.4–1.8s: type the question
+  const typed = Math.floor(clamp((t - 0.4) / 1.4) * TYPED.length);
+  const sent = t >= 7.0;
+  const pasted = t >= 5.9 && !sent;
+
+  transcript.innerHTML = INTRO + (sent ? ASK : "");
+  if (sent) {
+    const lines = Math.floor(clamp((t - 7.4) / 1.6) * REPLY.length + (t >= 7.4 ? 1 : 0));
+    transcript.innerHTML += REPLY.slice(0, Math.min(lines, REPLY.length)).join("");
+  }
+  input.innerHTML = sent ? "" : TYPED.slice(0, typed) + (pasted ? `<span class="chip-img">[Image #1]</span>` : "");
+  cursor.style.opacity = Math.floor(t * 2) % 2 === 0 || t < 2.2 ? 1 : 0.15;
+
+  // keycaps
+  show(k1, t >= 2.0 && t < 3.0, ease((t - 2.0) / 0.15));
+  show(k2, t >= 5.0 && t < 5.8, ease((t - 5.0) / 0.15));
+  show(k3, t >= 6.5 && t < 7.2, ease((t - 6.5) / 0.15));
+
+  // camera window: in at 2.4, out at 5.5
+  const camIn = ease((t - 2.4) / 0.25);
+  const camOut = ease((t - 5.5) / 0.2);
+  const camVis = t >= 2.4 && t < 5.7 ? camIn * (1 - camOut) : 0;
+  cam.style.opacity = camVis;
+  cam.style.transform = `scale(${0.96 + 0.04 * camVis})`;
+
+  // the page is lifted into view, then held with a small hand wobble
+  const lift = ease((t - 2.6) / 0.8);
+  const wob = Math.sin(t * 2.6) * 1.2;
+  page.style.width = "340px";
+  page.style.left = `${100 + wob * 2}px`;
+  page.style.top = `${24 + (1 - lift) * 300 + Math.cos(t * 2.1) * 2}px`;
+  page.style.transform = `rotate(${-2.5 + wob * 0.6}deg)`;
+
+  // shutter flash at 5.2
+  flash.style.opacity = t >= 5.2 && t < 5.5 ? 0.85 * (1 - (t - 5.2) / 0.3) : 0;
+}
+
+const m = location.hash.match(/t=([\d.]+)/);
+if (m) {
+  apply(parseFloat(m[1]));
+} else {
+  const start = performance.now();
+  (function loop() {
+    apply(((performance.now() - start) / 1000) % DURATION);
+    requestAnimationFrame(loop);
+  })();
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,32 @@
+name: Bug report
+description: Something did not work as expected
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Doctor output
+      description: Output of `herdr plugin action invoke rchougule.cam.doctor` (see `herdr plugin log list --plugin rchougule.cam`).
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Worker log
+      description: Last lines of `~/.local/state/herdr/plugins/rchougule.cam/herdr-cam.log`, if any.
+      render: text
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: macOS version, herdr version (`herdr --version`), and the agent (e.g. Claude Code 2.x).
+    validations:
+      required: true

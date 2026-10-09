@@ -1,0 +1,22 @@
+id = "rchougule.cam"
+name = "herdr-cam"
+version = "0.1.0"
+min_herdr_version = "0.9.1"
+description = "Show your agent what's on your desk: press a key, point the webcam, and the photo lands in the focused agent's prompt."
+platforms = ["macos"]
+
+[[build]]
+command = ["sh", "scripts/build.sh"]
+
+[[actions]]
+id = "capture"
+title = "herdr-cam: photo into this pane"
+description = "Opens a camera preview. Space captures and pastes the photo into the focused pane; Esc cancels."
+contexts = ["pane", "global"]
+command = ["bin/herdr-cam", "capture"]
+
+[[actions]]
+id = "doctor"
+title = "herdr-cam: diagnose"
+contexts = ["global"]
+command = ["bin/herdr-cam", "doctor"]

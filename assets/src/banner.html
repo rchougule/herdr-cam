@@ -1,0 +1,64 @@
+<!doctype html>
+<!-- README banner (#banner, 800x280 CSS px) and GitHub social preview (#social,
+     640x320 CSS px). Rendered at 2x by scripts/render-media.sh. -->
+<html>
+<head>
+<meta charset="utf-8">
+<title>herdr-cam banner</title>
+<link rel="stylesheet" href="scene.css">
+<style>
+  #stage { position: relative; overflow: hidden; background: linear-gradient(135deg, var(--base), var(--mantle)); }
+  .copy { position: absolute; }
+  .name { font: 700 40px var(--mono); color: var(--text); letter-spacing: -0.5px; }
+  .tag { font: 500 19px var(--sans); color: var(--subtext0); margin-top: 8px; }
+  .flow { display: flex; align-items: center; gap: 7px; margin-top: 22px; font: 13px var(--sans); color: var(--overlay0); }
+  .flow .key { font-size: 12px; padding: 3px 8px; }
+  .flow .img { font: 13px var(--mono); color: var(--blue); background: rgba(137, 180, 250, 0.14); padding: 3px 6px; border-radius: 4px; }
+  .mini { position: absolute; font: 12px var(--mono); color: var(--text); }
+  .mini .chip-img { color: var(--blue); background: rgba(137, 180, 250, 0.14); padding: 0 3px; border-radius: 3px; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<script src="scene.js"></script>
+<script>
+const social = location.hash === "#social";
+const W = social ? 640 : 800, H = social ? 320 : 280;
+const stage = document.getElementById("stage");
+stage.style.width = W + "px";
+stage.style.height = H + "px";
+
+const copy = el(`
+  <div class="copy">
+    <div class="name">herdr-cam</div>
+    <div class="tag">Show your agent what's on your desk.</div>
+    <div class="flow">
+      <span class="key">ctrl+b</span><span class="key">i</span>
+      <span>→</span><span class="key">Space</span><span>→</span><span class="img">[Image #1]</span>
+    </div>
+  </div>`);
+
+const camW = social ? 250 : 320;
+const cam = camera({ x: 0, y: 0, w: camW });
+const page = cam.querySelector(".page");
+page.style.cssText += ";width:" + (camW * 0.6) + "px;left:" + (camW * 0.2) + "px;top:12px;transform:rotate(-3deg) scale(" + (camW / 520).toFixed(3) + ");transform-origin:top left;";
+page.style.width = (camW * 0.95) + "px";
+cam.querySelector(".hud").textContent = "Space capture  ·  Esc cancel";
+cam.querySelector(".hud").style.fontSize = "10px";
+
+const prompt = el(`<div class="mini">❯ is my dry run right? <span class="chip-img">[Image #1]</span></div>`);
+
+if (social) {
+  copy.style.cssText = "left:40px;top:40px";
+  copy.querySelector(".flow").style.cssText += ";position:absolute;top:150px;width:300px;flex-wrap:wrap";
+  cam.style.left = "350px"; cam.style.top = "118px";
+  prompt.style.cssText += ";font-size:11px;left:350px;top:" + (118 + camW * 9 / 16 + 28 + 10) + "px";
+} else {
+  copy.style.cssText = "left:44px;top:72px";
+  cam.style.left = "440px"; cam.style.top = "22px";
+  prompt.style.cssText += ";left:440px;top:" + (22 + camW * 9 / 16 + 28 + 12) + "px";
+}
+stage.append(copy, cam, prompt);
+</script>
+</body>
+</html>

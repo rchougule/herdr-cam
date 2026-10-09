@@ -1,0 +1,6 @@
+#!/bin/sh
+# Stand-in for the herdr CLI. Records argv to $FAKE_HERDR_LOG.
+echo "$*" >>"$FAKE_HERDR_LOG"
+case "$1 $2" in
+"pane current") echo '{"id":"cli:pane:current","result":{"pane":{"pane_id":"w9:p9","agent":"claude"}}}' ;;
+esac
