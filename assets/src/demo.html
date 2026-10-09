@@ -1,7 +1,7 @@
 <!doctype html>
-<!-- Demo animation. Renders the frame at the time given in the URL hash (#t=3.2), so
-     scripts/render-media.sh can screenshot it frame by frame into assets/demo.gif.
-     Open it in a browser without a hash to watch it play. -->
+<!-- Demo animation: two sheets of paper captured in one go. `apply(t)` draws the
+     frame for time t; assets/render.mjs calls it frame by frame for assets/demo.gif.
+     Open this file in a browser to watch it play. -->
 <html>
 <head>
 <meta charset="utf-8">
@@ -10,86 +10,105 @@
 <style>
   #stage { position: relative; width: 960px; height: 600px; background: var(--crust); }
   .chip-img { background: rgba(137, 180, 250, 0.14); border-radius: 3px; padding: 0 2px; }
+  .ok { color: var(--green); }
+  .warn { color: var(--peach); }
 </style>
 </head>
 <body>
 <div id="stage"></div>
 <script src="scene.js"></script>
 <script>
-const DURATION = 12;
+const DURATION = 17;
 const stage = document.getElementById("stage");
 const term = terminal({ x: 20, y: 20, w: 920, h: 560 });
-const cam = camera({ x: 360, y: 64, w: 540 });
+const cam = camera({ x: 360, y: 60, w: 540 });
 const k1 = keys(["ctrl", "b", "then", "i"], { x: 380, y: 452 });
 const k2 = keys(["Space"], { x: 448, y: 452 });
-const k3 = keys(["⏎ Enter"], { x: 430, y: 452 });
-stage.append(term, cam, k1, k2, k3);
+const k3 = keys(["Space"], { x: 448, y: 452 });
+const k4 = keys(["⏎ Enter", "send photos"], { x: 400, y: 452 });
+const k5 = keys(["⏎ Enter", "send prompt"], { x: 400, y: 452 });
+k4.lastChild.className = "then"; k5.lastChild.className = "then";
+stage.append(term, cam, k1, k2, k3, k4, k5);
 
 const transcript = term.querySelector(".transcript");
 const input = term.querySelector(".input");
 const cursor = term.querySelector(".cursor");
-const page = cam.querySelector(".page");
+const [page1, page2] = cam.querySelectorAll(".page");
+const [thumb1, thumb2] = cam.querySelectorAll(".thumb");
+const hudEl = cam.querySelector(".hud");
 const flash = cam.querySelector(".flash");
 
 const INTRO = `
-  <div class="bullet">Prefix sums: keep a running total. A subarray ending at i sums
-  to k when (total − k) was seen earlier.</div>
-  <div class="dim">&nbsp;&nbsp;Try a dry run on [2, 3, 1, 4] with k = 4, by hand.</div>`;
-const TYPED = "is my dry run right? ";
-const ASK = `<div class="user" style="margin-top:14px">&gt; ${TYPED}<span class="chip-img">[Image #1]</span></div>`;
+  <div class="bullet">Auth API is in: POST /api/session returns a token, and requests are rate limited.</div>
+  <div class="dim">&nbsp;&nbsp;Next is the login screen. Sketch it on paper if that's quicker.</div>`;
+const TYPED = "build this login card, and check my rate limiter dry run ";
+const IMGS = `<span class="chip-img">[Image #1]</span> <span class="chip-img">[Image #2]</span>`;
+const ASK = `<div class="user" style="margin-top:14px">&gt; ${TYPED}${IMGS}</div>`;
 const REPLY = [
-  `<div class="bullet" style="margin-top:10px">Yes. Rows 2 and 3 are the hits:</div>`,
-  `<div>&nbsp;&nbsp;· i=2 &nbsp;total 6, &nbsp;need 2 → seen at i=0 → <span style="color:var(--green)">[3, 1]</span></div>`,
-  `<div>&nbsp;&nbsp;· i=3 &nbsp;total 10, need 6 → seen at i=2 → <span style="color:var(--green)">[4]</span></div>`,
-  `<div style="margin-top:6px">&nbsp;&nbsp;Two subarrays sum to 4. Your table is correct.</div>`,
+  `<div class="bullet" style="margin-top:10px">Two things from your photos:</div>`,
+  `<div>&nbsp;&nbsp;1. Login card: logo, "Welcome back", email, password, remember me, a full-width</div>`,
+  `<div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Sign in button, and your red note: 8px corners.</div>`,
+  `<div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="ok">Wrote src/components/LoginCard.tsx</span></div>`,
+  `<div style="margin-top:6px">&nbsp;&nbsp;2. Rate limiter: the trace slips at <span class="warn">t=3</span>. The bucket is empty after t=2 and</div>`,
+  `<div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;refills by 1, so it holds 1 token, not 2: only 1 of the 2 requests passes.</div>`,
 ];
 
-function show(node, on, fade = 1) {
-  node.style.opacity = on ? fade : 0;
+const show = (node, on, fade = 1) => { node.style.opacity = on ? fade : 0; };
+const pop = (t, at, len = 0.7) => t >= at && t < at + len;
+
+// One sheet's position: lifted in at `inAt`, held with a small hand wobble, dropped
+// out of frame at `outAt`.
+function placePage(page, t, inAt, outAt, seed) {
+  const lift = ease((t - inAt) / 0.8);
+  const drop = outAt ? ease((t - outAt) / 0.6) : 0;
+  const wob = Math.sin(t * 2.6 + seed) * 1.2;
+  page.style.width = "300px";
+  page.style.left = `${120 + wob * 2}px`;
+  page.style.top = `${22 + (1 - lift) * 300 + drop * 320 + Math.cos(t * 2.1 + seed) * 2}px`;
+  page.style.transform = `rotate(${-2.5 + seed + wob * 0.6}deg)`;
+  page.style.opacity = t >= inAt && (!outAt || t < outAt + 0.6) ? 1 : 0;
 }
 
 function apply(t) {
-  // 0.4–1.8s: type the question
-  const typed = Math.floor(clamp((t - 0.4) / 1.4) * TYPED.length);
-  const sent = t >= 7.0;
-  const pasted = t >= 5.9 && !sent;
+  const typed = Math.floor(clamp((t - 0.3) / 1.7) * TYPED.length);
+  const pasted = t >= 9.7;
+  const sent = t >= 10.9;
 
   transcript.innerHTML = INTRO + (sent ? ASK : "");
   if (sent) {
-    const lines = Math.floor(clamp((t - 7.4) / 1.6) * REPLY.length + (t >= 7.4 ? 1 : 0));
-    transcript.innerHTML += REPLY.slice(0, Math.min(lines, REPLY.length)).join("");
+    const lines = t >= 11.2 ? Math.min(REPLY.length, 1 + Math.floor((t - 11.2) / 0.35)) : 0;
+    transcript.innerHTML += REPLY.slice(0, lines).join("");
   }
-  input.innerHTML = sent ? "" : TYPED.slice(0, typed) + (pasted ? `<span class="chip-img">[Image #1]</span>` : "");
+  input.innerHTML = sent ? "" : TYPED.slice(0, typed) + (pasted ? IMGS : "");
   cursor.style.opacity = Math.floor(t * 2) % 2 === 0 || t < 2.2 ? 1 : 0.15;
 
   // keycaps
-  show(k1, t >= 2.0 && t < 3.0, ease((t - 2.0) / 0.15));
-  show(k2, t >= 5.0 && t < 5.8, ease((t - 5.0) / 0.15));
-  show(k3, t >= 6.5 && t < 7.2, ease((t - 6.5) / 0.15));
+  show(k1, pop(t, 2.1, 0.9), ease((t - 2.1) / 0.15));
+  show(k2, pop(t, 4.6), ease((t - 4.6) / 0.15));
+  show(k3, pop(t, 7.9), ease((t - 7.9) / 0.15));
+  show(k4, pop(t, 9.0), ease((t - 9.0) / 0.15));
+  show(k5, pop(t, 10.3, 0.6), ease((t - 10.3) / 0.15));
 
-  // camera window: in at 2.4, out at 5.5
-  const camIn = ease((t - 2.4) / 0.25);
-  const camOut = ease((t - 5.5) / 0.2);
-  const camVis = t >= 2.4 && t < 5.7 ? camIn * (1 - camOut) : 0;
+  // camera window: in at 2.5, out at 9.3
+  const camVis = t >= 2.5 && t < 9.5 ? ease((t - 2.5) / 0.25) * (1 - ease((t - 9.3) / 0.2)) : 0;
   cam.style.opacity = camVis;
   cam.style.transform = `scale(${0.96 + 0.04 * camVis})`;
 
-  // the page is lifted into view, then held with a small hand wobble
-  const lift = ease((t - 2.6) / 0.8);
-  const wob = Math.sin(t * 2.6) * 1.2;
-  page.style.width = "340px";
-  page.style.left = `${100 + wob * 2}px`;
-  page.style.top = `${24 + (1 - lift) * 300 + Math.cos(t * 2.1) * 2}px`;
-  page.style.transform = `rotate(${-2.5 + wob * 0.6}deg)`;
+  placePage(page1, t, 2.7, 5.4, 0);
+  placePage(page2, t, 6.0, null, 0.8);
 
-  // shutter flash at 5.2
-  flash.style.opacity = t >= 5.2 && t < 5.5 ? 0.85 * (1 - (t - 5.2) / 0.3) : 0;
+  // shutter flashes, then the photo drops into the tray and the HUD counts it
+  flash.style.opacity = pop(t, 4.8, 0.3) ? 0.85 * (1 - (t - 4.8) / 0.3)
+    : pop(t, 8.1, 0.3) ? 0.85 * (1 - (t - 8.1) / 0.3) : 0;
+  show(thumb1, t >= 5.0, ease((t - 5.0) / 0.2));
+  show(thumb2, t >= 8.3, ease((t - 8.3) / 0.2));
+  hudEl.textContent = hud(t >= 8.3 ? 2 : t >= 5.0 ? 1 : 0);
 }
 
 const m = location.hash.match(/t=([\d.]+)/);
 if (m) {
   apply(parseFloat(m[1]));
-} else {
+} else if (!location.hash.includes("still")) {
   const start = performance.now();
   (function loop() {
     apply(((performance.now() - start) / 1000) % DURATION);

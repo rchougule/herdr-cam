@@ -6,18 +6,32 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   test:
     name: build & test (macOS)
     runs-on: macos-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Shellcheck
-        run: brew install shellcheck >/dev/null && shellcheck -s sh bin/herdr-cam scripts/*.sh tests/*.sh
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+        run: |
+          brew install shellcheck >/dev/null
+          shellcheck -s sh bin/herdr-cam scripts/*.sh tests/*.sh tests/support/fake-open tests/support/fake-herdr
 
-      # Core tests, launcher tests against a fake herdr socket, app build, and a
-      # headless run of the real bundle. No herdr server or camera exists in CI;
-      # tests/e2e_live.sh is the live suite and is run locally.
+      # Core tests (test and release builds), launcher tests against a fake herdr
+      # socket, and headless runs of the real test and release bundles. No herdr server
+      # or camera exists in CI; tests/e2e_live.sh is the live suite and runs locally.
       - name: Test
         run: sh scripts/test.sh
+
+      # The plugin's own install step, exactly as `herdr plugin install` runs it.
+      - name: Install build
+        run: |
+          sh scripts/build.sh
+          codesign --verify --verbose build/HerdrCam.app

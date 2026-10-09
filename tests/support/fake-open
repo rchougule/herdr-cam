@@ -1,14 +1,32 @@
 #!/bin/sh
-# Stand-in for `open -W HerdrCam.app --args ...`. Records argv to $FAKE_OPEN_LOG and
-# behaves per $FAKE_OPEN_MODE: ok (writes the fixture to --out), cancel, error.
+# Stand-in for /usr/bin/open in `open -W HerdrCam.app --args ...`. Records argv to
+# $FAKE_OPEN_LOG and acts out $FAKE_OPEN_MODE:
+#   ok      writes $FAKE_SHOTS photos (default 1) and an ok result
+#   cancel  writes a cancel result        error  writes an error result
+#   crash   writes nothing (app died)     fail   exits 1 (open itself failed)
 echo "$*" >>"$FAKE_OPEN_LOG"
+[ "$1" = "-W" ] || {
+  echo "fake-open: called without -W" >>"$FAKE_OPEN_LOG"
+  exit 0
+}
 out=""
 while [ $# -gt 0 ]; do
   [ "$1" = "--out" ] && out="$2"
   shift
 done
 case "${FAKE_OPEN_MODE:-ok}" in
-ok) mkdir -p "$(dirname "$out")" && cp "$FAKE_FIXTURE" "$out" ;;
-cancel) ;;
-error) echo "Camera access denied." >"$out.err" ;;
+ok)
+  mkdir -p "$(dirname "$out")"
+  printf 'ok\n' >"$out.result"
+  i=1
+  while [ "$i" -le "${FAKE_SHOTS:-1}" ]; do
+    cp "$FAKE_FIXTURE" "$out-$i.jpg"
+    echo "$out-$i.jpg" >>"$out.result"
+    i=$((i + 1))
+  done
+  ;;
+cancel) printf 'cancel\n' >"$out.result" ;;
+error) printf 'error\nCamera access is off for HerdrCam.\n' >"$out.result" ;;
+crash) ;;
+fail) exit 1 ;;
 esac

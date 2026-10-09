@@ -21,7 +21,7 @@ body:
     id: log
     attributes:
       label: Worker log
-      description: Last lines of `~/.local/state/herdr/plugins/rchougule.cam/herdr-cam.log`, if any.
+      description: Last lines of `~/.local/state/herdr/plugins/rchougule.cam/herdr-cam.log`, if any. Its "error:" lines are the messages you saw.
       render: text
   - type: input
     id: versions

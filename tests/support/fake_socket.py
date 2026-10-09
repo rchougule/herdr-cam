@@ -1,6 +1,7 @@
 """Stand-in for the herdr API socket. Logs every request line to argv[2] and answers
-ok, or with an error when the pane id contains "missing". Usage:
-    python3 -I fake_socket.py <socket-path> <log-path>
+ok, or pane_not_found when the pane id contains "missing" (the shapes herdr 0.9.1
+returns). Touches argv[3] once it is listening, so callers can wait for it. Usage:
+    python3 -I fake_socket.py <socket-path> <log-path> <ready-file>
 """
 
 import json
@@ -14,6 +15,7 @@ if os.path.exists(path):
 srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 srv.bind(path)
 srv.listen(8)
+open(sys.argv[3], "w").close()
 
 while True:
     conn, _ = srv.accept()

@@ -46,11 +46,11 @@ page.style.width = (camW * 0.95) + "px";
 cam.querySelector(".hud").textContent = "Space capture  ·  Esc cancel";
 cam.querySelector(".hud").style.fontSize = "10px";
 
-const prompt = el(`<div class="mini">❯ is my dry run right? <span class="chip-img">[Image #1]</span></div>`);
+const prompt = el(`<div class="mini">❯ build this login card <span class="chip-img">[Image #1]</span></div>`);
 
 if (social) {
-  copy.style.cssText = "left:40px;top:40px";
-  copy.querySelector(".flow").style.cssText += ";position:absolute;top:150px;width:300px;flex-wrap:wrap";
+  copy.style.cssText = "left:40px;top:64px";
+  copy.querySelector(".tag").style.fontSize = "16px";
   cam.style.left = "350px"; cam.style.top = "118px";
   prompt.style.cssText += ";font-size:11px;left:350px;top:" + (118 + camW * 9 / 16 + 28 + 10) + "px";
 } else {

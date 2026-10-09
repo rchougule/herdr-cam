@@ -1,39 +1,90 @@
 #!/bin/sh
-# herdr-cam: photograph your notes and paste them into the focused herdr pane.
+# herdr-cam: photograph what's on your desk and paste it into the focused herdr pane.
 #
-#   herdr-cam capture          plugin action: open the camera, paste the photo
-#   herdr-cam paste PANE FILE  bracketed-paste FILE's path into PANE (no Enter)
+#   herdr-cam capture          plugin action: open the camera, paste the photos
+#   herdr-cam paste PANE TEXT  bracketed-paste TEXT into PANE (no Enter)
 #   herdr-cam prune            delete captures older than KEEP_DAYS
-#   herdr-cam doctor           check the build, socket, and keybinding
+#   herdr-cam doctor           check the build, socket, keybinding, and settings
 #
-# Agents such as Claude Code turn a pasted image path into an attachment
-# ("[Image #1]"), so the photo lands in the prompt without touching the clipboard.
+# Agents such as Claude Code turn pasted image paths into attachments ("[Image #1]"),
+# so the photos land in the prompt without touching the clipboard.
 set -u
+umask 077 # photos and logs are readable by this user only
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
-app="${HERDR_CAM_APP:-$root/build/HerdrCam.app}"
 herdr="${HERDR_BIN_PATH:-herdr}"
 state="${HERDR_PLUGIN_STATE_DIR:-$HOME/.local/state/herdr-cam}"
 captures="$state/captures"
 log="$state/herdr-cam.log"
+lock="$state/lock"
 
-# User config: KEY=VALUE lines in $(herdr plugin config-dir rchougule.cam)/config.env
+# Test and development hooks come from the environment only, never from config.env.
+app="${HERDR_CAM_APP:-$root/build/HerdrCam.app}"
+opener="${HERDR_CAM_OPEN:-open}"
+
+# --- settings -----------------------------------------------------------------------
+# config.env holds KEY=VALUE lines. It is read as data, never run as shell code: only
+# the keys below are accepted, each value is validated, and a bad line keeps the
+# default and is reported (on capture as a notification, and by `doctor`).
 MAX_EDGE=2048
 QUALITY=0.85
 TIMER=3
 KEEP_DAYS=30
-conf="${HERDR_PLUGIN_CONFIG_DIR:-}/config.env"
-if [ -n "${HERDR_PLUGIN_CONFIG_DIR:-}" ] && [ -f "$conf" ]; then
-  # shellcheck disable=SC1090
-  . "$conf"
-fi
+config_problems=""
 
+is_int() { case "$1" in '' | *[!0-9]*) return 1 ;; esac; }
+
+config_problem() { config_problems="${config_problems}${config_problems:+; }$1"; }
+
+load_config() {
+  conf="${HERDR_PLUGIN_CONFIG_DIR:-}/config.env"
+  [ -n "${HERDR_PLUGIN_CONFIG_DIR:-}" ] && [ -f "$conf" ] || return 0
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="$(printf '%s' "$line" | tr -d '\r')"
+    case "$line" in '' | '#'*) continue ;; esac
+    key="$(printf '%s' "${line%%=*}" | tr -d ' \t')"
+    val="$(printf '%s' "${line#*=}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' \
+      -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'$/\1/")"
+    case "$key" in
+    MAX_EDGE)
+      if is_int "$val" && [ "$val" -ge 64 ] && [ "$val" -le 8192 ]; then MAX_EDGE=$val; else
+        config_problem "MAX_EDGE=$val (needs 64 to 8192)"
+      fi
+      ;;
+    QUALITY)
+      if printf '%s' "$val" | grep -Eq '^(0?\.[0-9]*[1-9][0-9]*|1(\.0*)?)$'; then QUALITY=$val; else
+        config_problem "QUALITY=$val (needs a number above 0, at most 1)"
+      fi
+      ;;
+    TIMER)
+      if is_int "$val" && [ "$val" -ge 1 ] && [ "$val" -le 30 ]; then TIMER=$val; else
+        config_problem "TIMER=$val (needs 1 to 30)"
+      fi
+      ;;
+    KEEP_DAYS)
+      if is_int "$val"; then KEEP_DAYS=$val; else
+        config_problem "KEEP_DAYS=$val (needs a whole number, 0 keeps everything)"
+      fi
+      ;;
+    *) config_problem "unknown setting '$key'" ;;
+    esac
+  done <"$conf"
+}
+
+# --- helpers ------------------------------------------------------------------------
 notify() {
   "$herdr" notification show herdr-cam --body "$1" >/dev/null 2>&1 || true
 }
 
+say() { echo "$(date '+%F %T') $*"; }
+
 json_escape() {
   printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
+}
+
+# Spaces in a path are backslash-escaped, the way a terminal drag-and-drop pastes them.
+paste_form() {
+  printf '%s' "$1" | sed 's/ /\\ /g'
 }
 
 focused_pane() {
@@ -41,16 +92,19 @@ focused_pane() {
     echo "$HERDR_PANE_ID"
     return
   fi
-  "$herdr" pane current 2>/dev/null | sed -n 's/.*"pane_id":"\([^"]*\)".*/\1/p'
+  # plutil prints its errors on stdout, so only trust what it says when it succeeds.
+  id="$("$herdr" pane current 2>/dev/null | plutil -extract result.pane.pane_id raw -o - - 2>/dev/null)" || return 0
+  case "$id" in *[!A-Za-z0-9:_-]* | '') return 0 ;; esac
+  echo "$id"
 }
 
 # pane.send_input wraps text in bracketed-paste markers when the pane's app asked
 # for them, which is what makes the agent treat it as a paste and not typing.
 paste() {
   pane="$1"
-  file="$2"
+  text="$2"
   req="$(printf '{"id":"herdr-cam","method":"pane.send_input","params":{"pane_id":"%s","text":"%s"}}' \
-    "$(json_escape "$pane")" "$(json_escape "$file")")"
+    "$(json_escape "$pane")" "$(json_escape "$text")")"
   resp="$(printf '%s\n' "$req" | nc -U -w 3 "${HERDR_SOCKET_PATH:?HERDR_SOCKET_PATH not set}" 2>&1)"
   if printf '%s' "$resp" | grep -Eq '"type" *: *"ok"'; then
     return 0
@@ -62,99 +116,172 @@ paste() {
 prune() {
   [ "$KEEP_DAYS" -gt 0 ] 2>/dev/null || return 0
   [ -d "$captures" ] || return 0
-  find "$captures" -name 'note-*' -type f -mtime +"$KEEP_DAYS" -delete 2>/dev/null || true
+  find "$captures" -type f \( -name 'note-*.jpg' -o -name 'note-*.result' \) -mtime +"$KEEP_DAYS" -delete 2>/dev/null || true
+}
+
+trim_log() {
+  [ -f "$log" ] || return 0
+  [ "$(wc -l <"$log")" -gt 500 ] || return 0
+  tail -n 200 "$log" >"$log.tmp" && mv "$log.tmp" "$log"
+}
+
+# One camera window at a time. The lock holds the worker's pid; a dead pid is stale.
+lock_holder_alive() {
+  pid="$(cat "$lock/pid" 2>/dev/null)"
+  [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null
+}
+
+# The pid file is written straight away with our own pid and later handed to the
+# worker, so the lock never sits there without a live owner.
+take_lock() {
+  if ! mkdir "$lock" 2>/dev/null; then
+    lock_holder_alive && return 1
+    rm -rf "$lock"
+    mkdir "$lock" 2>/dev/null || return 1
+  fi
+  echo "$$" >"$lock/pid"
+}
+
+release_lock() {
+  [ "$(cat "$lock/pid" 2>/dev/null)" = "$$" ] && rm -rf "$lock"
+  return 0
 }
 
 launch_app() {
-  out="$1"
-  set -- "$app" --args --out "$out" --max-edge "$MAX_EDGE" --quality "$QUALITY" --timer "$TIMER"
-  if [ -n "${HERDR_CAM_AUTO_CAPTURE:-}" ]; then
-    set -- "$@" --auto-capture "$HERDR_CAM_AUTO_CAPTURE"
-  fi
-  if [ -n "${HERDR_CAM_FAKE_IMAGE:-}" ]; then
-    set -- "$@" --fake-image "$HERDR_CAM_FAKE_IMAGE"
-  fi
-  if [ -n "${HERDR_CAM_OPEN:-}" ]; then
-    "$HERDR_CAM_OPEN" "$@"
-  else
-    open -W "$@"
-  fi
+  base="$1"
+  set -- -W "$app" --args --out "$base" --max-edge "$MAX_EDGE" --quality "$QUALITY" --timer "$TIMER"
+  # Test builds only; a release build rejects these and reports it in the result.
+  for img in $(printf '%s' "${HERDR_CAM_FAKE_IMAGES:-}" | tr ':' ' '); do
+    set -- "$@" --fake-image "$img"
+  done
+  [ -n "${HERDR_CAM_AUTO_CAPTURE:-}" ] && set -- "$@" --auto-capture "$HERDR_CAM_AUTO_CAPTURE"
+  [ -n "${HERDR_CAM_AUTO_SHOTS:-}" ] && set -- "$@" --auto-shots "$HERDR_CAM_AUTO_SHOTS"
+  "$opener" "$@"
 }
 
-# Foreground worker: camera window, then paste, then hand focus back.
+# --- the worker: camera window, then paste, then hand focus back --------------------
 run() {
   pane="$1"
-  mkdir -p "$captures"
-  out="$captures/note-$(date +%Y%m%d-%H%M%S)-$$.jpg"
-
   front=""
   if [ -z "${HERDR_CAM_NO_REFOCUS:-}" ]; then
     front="$(lsappinfo info -only bundleid "$(lsappinfo front)" 2>/dev/null | sed -n 's/.*="\(.*\)"/\1/p')"
   fi
+  # On every way out: release the lock and give focus back to the terminal.
+  trap 'release_lock; [ -n "$front" ] && open -b "$front" 2>/dev/null' EXIT
+  trap 'exit 1' INT TERM HUP
 
-  launch_app "$out"
-
-  if [ -s "$out.err" ]; then
-    notify "$(cat "$out.err")"
-    rm -f "$out.err"
-    return 1
-  fi
-  [ -s "$out" ] || return 0 # cancelled
-
-  echo "$(date '+%F %T') captured $out -> pane $pane"
-  if ! paste "$pane" "$out"; then
-    notify "Saved $out but could not paste into pane $pane."
-    return 1
-  fi
-  if [ -n "$front" ]; then
-    open -b "$front" 2>/dev/null || true
-  fi
   prune
+  trim_log
+  mkdir -p "$captures"
+  chmod 700 "$state" "$captures" 2>/dev/null
+  base="$captures/note-$(date +%Y%m%d-%H%M%S)-$$"
+  result="$base.result"
+
+  if [ -n "$config_problems" ]; then
+    notify "Ignoring config.env: $config_problems"
+  fi
+
+  if ! launch_app "$base"; then
+    say "could not open $app"
+    notify "Could not open HerdrCam. Run the doctor action for details."
+    return 1
+  fi
+  if [ ! -f "$result" ]; then
+    say "no result from HerdrCam for $base"
+    notify "HerdrCam closed without taking a photo. It may have crashed; see $log."
+    return 1
+  fi
+
+  status="$(head -n 1 "$result")"
+  case "$status" in
+  ok)
+    text=""
+    while IFS= read -r p; do
+      [ -n "$p" ] && text="${text}${text:+ }$(paste_form "$p")"
+    done <<EOF
+$(tail -n +2 "$result")
+EOF
+    rm -f "$result"
+    [ -n "$text" ] || return 0
+    say "captured $(printf '%s\n' "$text" | wc -w | tr -d ' ') photo(s) -> pane $pane"
+    if ! paste "$pane" "$text"; then
+      notify "Saved the photos but could not paste into pane $pane. They are in $captures."
+      return 1
+    fi
+    ;;
+  cancel)
+    rm -f "$result"
+    ;;
+  error)
+    msg="$(sed -n 2p "$result")"
+    rm -f "$result"
+    say "error: $msg"
+    notify "$msg"
+    return 1
+    ;;
+  *)
+    say "unreadable result: $status"
+    notify "HerdrCam returned something unexpected; see $log."
+    return 1
+    ;;
+  esac
 }
 
 capture() {
-  [ -d "$app" ] || [ -n "${HERDR_CAM_OPEN:-}" ] || {
+  if [ ! -d "$app" ]; then
     notify "HerdrCam.app is not built. Run scripts/build.sh in $root."
     return 1
-  }
+  fi
   pane="$(focused_pane)"
   if [ -z "$pane" ]; then
     notify "No focused pane to paste into."
     return 1
   fi
-  # One camera window at a time: a second press just brings it forward.
-  if [ -z "${HERDR_CAM_OPEN:-}" ] && pgrep -f "$app/Contents/MacOS/HerdrCam" >/dev/null 2>&1; then
-    open "$app"
+  mkdir -p "$state"
+  if ! take_lock; then
+    # A window is already open: bring it forward instead of opening a second one.
+    [ -z "${HERDR_CAM_OPEN:-}" ] && open -a "$app" 2>/dev/null
     return 0
   fi
   if [ -n "${HERDR_CAM_NO_DETACH:-}" ]; then
     run "$pane"
     return
   fi
-  # Detach so the keybinding returns at once, however long the shot takes.
-  mkdir -p "$state"
-  (nohup "$0" __run "$pane" >>"$log" 2>&1 &)
+  # Detach so the keybinding returns at once, however long the shots take.
+  nohup "$0" __run "$pane" >>"$log" 2>&1 &
+  echo "$!" >"$lock/pid"
 }
 
 doctor() {
-  status=0
-  if [ -x "$app/Contents/MacOS/HerdrCam" ]; then echo "ok    app built: $app"; else
-    echo "FAIL  app missing: run $root/scripts/build.sh"
-    status=1
+  problems=0
+  if [ -x "$app/Contents/MacOS/HerdrCam" ] && codesign --verify "$app" 2>/dev/null; then
+    echo "ok    app built and signed: $app"
+  else
+    echo "FAIL  app missing or unsigned: run $root/scripts/build.sh"
+    problems=$((problems + 1))
   fi
   if [ -S "${HERDR_SOCKET_PATH:-}" ]; then echo "ok    herdr socket: $HERDR_SOCKET_PATH"; else
     echo "FAIL  herdr socket not found (run inside herdr or via the plugin)"
-    status=1
+    problems=$((problems + 1))
   fi
   cfg="${HERDR_CONFIG_PATH:-$HOME/.config/herdr/config.toml}"
   if grep -q 'rchougule.cam.capture' "$cfg" 2>/dev/null; then echo "ok    keybinding present in $cfg"; else
     echo "WARN  no keybinding for rchougule.cam.capture in $cfg (see README)"
   fi
+  if [ -n "$config_problems" ]; then
+    echo "WARN  config.env: $config_problems"
+  fi
   echo "info  captures: $captures (kept $KEEP_DAYS days; 0 keeps forever)"
   echo "info  settings: MAX_EDGE=$MAX_EDGE QUALITY=$QUALITY TIMER=$TIMER"
-  return $status
+  if [ "$problems" -eq 0 ]; then
+    notify "doctor: all good${config_problems:+ (config.env has problems, see the plugin log)}"
+  else
+    notify "doctor: $problems problem(s). Details: herdr plugin log list --plugin rchougule.cam"
+  fi
+  [ "$problems" -eq 0 ]
 }
 
+load_config
 cmd="${1:-}"
 [ $# -gt 0 ] && shift
 case "$cmd" in
@@ -164,7 +291,7 @@ paste) paste "$1" "$2" ;;
 prune) prune ;;
 doctor) doctor ;;
 *)
-  echo "usage: herdr-cam capture | paste PANE FILE | prune | doctor" >&2
+  echo "usage: herdr-cam capture | paste PANE TEXT | prune | doctor" >&2
   exit 2
   ;;
 esac

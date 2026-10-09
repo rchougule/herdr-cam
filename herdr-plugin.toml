@@ -11,7 +11,7 @@ command = ["sh", "scripts/build.sh"]
 [[actions]]
 id = "capture"
 title = "herdr-cam: photo into this pane"
-description = "Opens a camera preview. Space captures and pastes the photo into the focused pane; Esc cancels."
+description = "Opens a camera preview. Space adds a photo, Enter pastes them into the focused pane, Esc discards."
 contexts = ["pane", "global"]
 command = ["bin/herdr-cam", "capture"]
 

@@ -1,43 +1,36 @@
 #!/bin/sh
-# Live end-to-end test. Needs a running herdr, the `claude` CLI, and a built app.
-# Not run in CI.
+# Live end-to-end test. Needs a running herdr and the `claude` CLI. Not run in CI.
 #
-#   sh tests/e2e_live.sh            fixture mode: camera swapped for tests/fixtures/test.png
-#   sh tests/e2e_live.sh camera     camera mode: real window, real webcam, auto-capture
-#                                   after a countdown (first run asks for camera access)
+#   sh tests/e2e_live.sh            fixture mode: two fixture photos, no camera
+#   sh tests/e2e_live.sh camera     camera mode: the real window and webcam take two
+#                                   photos on a countdown (first run asks for access)
 #
-# It splits a scratch pane, starts Claude Code in it, focuses it, and fires the real
-# plugin action through herdr (`herdr plugin action invoke rchougule.cam.capture`).
-# Everything else is real: herdr's action runner, the detached worker, `open -W` on
-# HerdrCam.app, the image pipeline, and the bracketed paste over the herdr socket.
-# Passes when Claude Code shows "[Image #1]" in its prompt.
+# Splits a scratch pane, starts Claude Code in it, and runs the real launcher against
+# the real herdr socket with the test build of HerdrCam.app (the one with test hooks).
+# Passes when Claude Code shows "[Image #1] [Image #2]" in its prompt. It also fires
+# the doctor action through herdr's own plugin runner.
+#
+# Nothing here touches your config.env or captures: state goes to a temp dir, and the
+# photos are pasted into the scratch pane by id, not into whatever has focus.
 set -eu
 root="$(cd "$(dirname "$0")/.." && pwd)"
 herdr="${HERDR_BIN_PATH:-herdr}"
-fixture="$root/tests/fixtures/test.png"
 mode="${1:-fixture}"
-
-[ -x "$root/build/HerdrCam.app/Contents/MacOS/HerdrCam" ] || sh "$root/scripts/build.sh"
-"$herdr" plugin list 2>/dev/null | grep -q rchougule.cam || "$herdr" plugin link "$root" >/dev/null
-
-conf_dir="$("$herdr" plugin config-dir rchougule.cam)"
-conf="$conf_dir/config.env"
-backup=""
-if [ -f "$conf" ]; then
-  backup="$(mktemp)"
-  cp "$conf" "$backup"
-fi
-
-origin="$("$herdr" pane current | sed -n 's/.*"pane_id":"\([^"]*\)".*/\1/p')"
-pane="$("$herdr" pane split --current --direction down --ratio 0.4 --no-focus --cwd "$root" |
-  sed -n 's/.*"pane_id":"\([^"]*\)".*/\1/p')"
+fixture="$root/tests/fixtures/test.png"
+tmp="$(mktemp -d)"
+pane=""
 
 cleanup() {
-  if [ -n "$backup" ]; then mv "$backup" "$conf"; else rm -f "$conf"; fi
-  "$herdr" pane close "$pane" >/dev/null 2>&1 || true
-  [ -n "$origin" ] && "$herdr" agent focus "$origin" >/dev/null 2>&1 || true
+  [ -n "$pane" ] && "$herdr" pane close "$pane" >/dev/null 2>&1
+  rm -rf "$tmp"
 }
 trap cleanup EXIT
+trap 'exit 1' INT TERM HUP
+
+sh "$root/scripts/build.sh" build/test --testing >/dev/null
+
+pane="$("$herdr" pane split --current --direction down --ratio 0.4 --no-focus --cwd "$root" |
+  plutil -extract result.pane.pane_id raw -o - -)"
 
 wait_for() {
   i=0
@@ -56,31 +49,35 @@ wait_for "❯" 40 || {
 }
 sleep 2
 
-{
-  [ -n "$backup" ] && cat "$backup"
-  if [ "$mode" = camera ]; then
-    echo "HERDR_CAM_AUTO_CAPTURE=6"
-  else
-    echo "HERDR_CAM_FAKE_IMAGE=$fixture"
-  fi
-} >"$conf"
+export HERDR_PANE_ID="$pane"
+export HERDR_PLUGIN_STATE_DIR="$tmp/state"
+export HERDR_CAM_APP="$root/build/test/HerdrCam.app"
+export HERDR_CAM_NO_DETACH=1
+export HERDR_CAM_NO_REFOCUS=1
 wait_secs=20
-[ "$mode" = camera ] && wait_secs=90 # room for the one-time camera permission prompt
-
-# Focus the scratch pane so the action targets it, exactly as the keybinding would.
-# Refuse to fire otherwise, so the photo never lands in whichever pane ran this test.
-"$herdr" agent focus "$pane" >/dev/null
-"$herdr" pane get "$pane" | grep -q '"focused":true' || {
-  echo "FAIL: could not focus scratch pane $pane"
-  exit 1
-}
-"$herdr" plugin action invoke rchougule.cam.capture >/dev/null
-
-if wait_for "[Image #1]" "$wait_secs"; then
-  echo "e2e ($mode): PASS (photo pasted into Claude Code as [Image #1])"
-  tail -1 "$HOME/.local/state/herdr/plugins/rchougule.cam/herdr-cam.log"
+if [ "$mode" = camera ]; then
+  export HERDR_CAM_AUTO_CAPTURE=5 HERDR_CAM_AUTO_SHOTS=2
+  wait_secs=90 # room for the one-time camera permission prompt
 else
-  echo "e2e: FAIL; pane shows:"
+  export HERDR_CAM_FAKE_IMAGES="$fixture:$fixture"
+fi
+"$root/bin/herdr-cam" capture
+
+if wait_for "[Image #1] [Image #2]" "$wait_secs"; then
+  echo "e2e ($mode): PASS (two photos pasted into Claude Code as [Image #1] [Image #2])"
+  tail -1 "$tmp/state/herdr-cam.log" 2>/dev/null || true
+else
+  echo "e2e ($mode): FAIL; pane shows:"
   "$herdr" pane read "$pane" --source visible --lines 12
+  exit 1
+fi
+
+# The plugin as herdr runs it: manifest, action runner, environment.
+"$herdr" plugin action invoke rchougule.cam.doctor >/dev/null
+sleep 1
+if "$herdr" plugin log list --plugin rchougule.cam | grep -q '"action_id":"doctor".*"status":"succeeded"'; then
+  echo "e2e: PASS (doctor action ran through herdr's plugin runner)"
+else
+  echo "e2e: FAIL; doctor action did not succeed through herdr"
   exit 1
 fi

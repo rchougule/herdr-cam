@@ -1,0 +1,12 @@
+{
+  "name": "herdr-cam-media",
+  "private": true,
+  "description": "Renders the README banner, social preview, and demo GIF from assets/src (dev only).",
+  "type": "module",
+  "scripts": {
+    "render": "node render.mjs"
+  },
+  "devDependencies": {
+    "playwright-core": "1.58.0"
+  }
+}
